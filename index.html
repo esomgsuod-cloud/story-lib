@@ -2,276 +2,10 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="referrer" content="no-referrer">
 <title>小故事</title>
-<!-- 必须和 index.html 放在同一文件夹 -->
-<script src="./data.js?v=3"></script>
-<script>
-  
-var sortOrder = 'desc';
-var currentExpandedRole = null;
-var searchDebounceTimer = null;
-
-  
-if (typeof STORY_DATA === 'undefined' || !STORY_DATA || !Array.isArray(STORY_DATA.stories)) {
-  window.STORY_DATA = { stories: [] };
-}
-
-function parseLocalDate(timeStr) {
-  if (!timeStr) return 0;
-  const m = String(timeStr).match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
-  if (!m) return new Date(timeStr).getTime() || 0;
-  return new Date(parseInt(m[1]), parseInt(m[2]) - 1, parseInt(m[3])).getTime();
-}
-
-
-function getStories() {
-  if (typeof STORY_DATA !== 'undefined' && STORY_DATA && Array.isArray(STORY_DATA.stories)) {
-    return STORY_DATA.stories;
-  }
-  if (window.STORY_DATA && Array.isArray(window.STORY_DATA.stories)) {
-    return window.STORY_DATA.stories;
-  }
-  return [];
-}
-
-function getSortedStories() {
-  const arr = getStories().map((s, idx) => ({ story: s, originIdx: idx }));
-  arr.sort((a, b) => {
-    const tA = parseLocalDate(a.story.createdAt);
-    const tB = parseLocalDate(b.story.createdAt);
-    return sortOrder === 'desc' ? tB - tA : tA - tB;
-  });
-  return arr;
-}
-
-function switchTab(targetTab) {
-  document.querySelectorAll('.tab').forEach(tabEl => {
-    tabEl.classList.toggle('active', tabEl.dataset.tab === targetTab);
-  });
-  document.getElementById('page-list').classList.toggle('active', targetTab === 'list');
-  document.getElementById('page-roles').classList.toggle('active', targetTab === 'roles');
-  const sortBtn = document.getElementById("sortBtn");
-  if(sortBtn){
-    sortBtn.style.visibility = targetTab === "list" ? "visible" : "hidden";
-    sortBtn.style.pointerEvents = targetTab === "list" ? "auto" : "none";
-  }
-
-  if(targetTab === 'list') renderStories();
-  if(targetTab === 'roles') renderRolePanel();
-}
-
-function toggleSortMode(){
-  sortOrder = sortOrder === 'desc' ? 'asc' : 'desc';
-  document.getElementById('sortLabel').innerText = sortOrder === 'desc' ? "最新发布" : "最早发布";
-  document.getElementById('sortArrow').innerText = sortOrder === 'desc' ? "▾" : "▴";
-  renderStories();
-}
-
-function coverHtml(url, cls) {
-  if (url) {
-    const safe = esc(url);
-    return `<div class="${cls}"><img referrerpolicy="no-referrer" src="${safe}" alt="封面"
-      onerror="this.parentNode.innerHTML='&lt;div class=&quot;cover-placeholder&quot;&gt;无封面&lt;/div&gt;'"></div>`;
-  }
-  return `<div class="${cls}"><div class="cover-placeholder">无封面</div></div>`;
-}
-
-function getRoleMap() {
-  const map = {};
-  getStories().forEach((story, idx)=>{
-    (story.roles||[]).forEach(role=>{
-      if(!map[role]) map[role]=[];
-      map[role].push({ story, idx });
-    })
-  });
-  return map;
-}
-
-function getSortedRoles(story) {
-  const roles = (story.roles || []).slice();
-  const priorityRole = "星海玲奈";
-  const priority = roles.filter(r => r === priorityRole);
-  const others = roles
-    .filter(r => r !== priorityRole)
-    .sort((a, b) => a.localeCompare(b, 'zh-CN'));
-  return priority.concat(others);
-}
-
-function esc(str) {
-  return String(str).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-}
-
-function renderStories() {
-  const list = getSortedStories();
-  const box = document.getElementById('storyList');
-  if(!list.length){
-    box.innerHTML = `<div class="empty">暂无小故事。<br>请在 data.js 中添加故事数据。</div>`;
-    return;
-  }
-  box.innerHTML = list.map(item=>{
-    const st = item.story;
-    const oIdx = item.originIdx;
-    const chips = getSortedRoles(st).map(r=>{
-      return `<span class="role-chip">${esc(r)}</span>`;
-    }).join('');
-    return `
-    <div class="card">
-      <div class="story-item" data-story-index="${oIdx}">
-        ${coverHtml(st.cover,'cover-wrap')}
-        <div class="story-info">
-          <div class="story-title">${esc(st.title||'未命名小故事')}</div>
-          <div class="role-row">${chips||'<span class="hint">暂无登场角色</span>'}</div>
-          <div class="story-meta">发布时间：${esc(st.createdAt||'未填写')}</div>
-        </div>
-      </div>
-    </div>`;
-  }).join('');
-}
-
-function renderRolePanel() {
-  const searchInput = document.getElementById('roleSearchInput');
-  const kw = searchInput ? searchInput.value.trim().toLowerCase() : '';
-  const box = document.getElementById('rolePanel');
-  const roleMap = getRoleMap();
-  let names = Object.keys(roleMap)
-    .filter(n=> !kw || n.toLowerCase().includes(kw))
-    .sort((a,b)=>{
-      if (a === "星海玲奈") return -1;
-      if (b === "星海玲奈") return 1;
-      return a.localeCompare(b,'zh-CN');
-    });
-  if(currentExpandedRole && !names.includes(currentExpandedRole)){
-    currentExpandedRole = null;
-  }
-  if(!names.length){
-    if (getStories().length === 0) {
-      box.innerHTML = `<div class="empty">暂无角色。<br>请先在 data.js 添加故事，并填写 roles 角色字段。</div>`;
-    } else {
-      box.innerHTML = `<div class="empty">${kw?'没有找到相关角色。':'故事里还没有填写任何登场角色。'}</div>`;
-    }
-    return;
-  }
-  box.innerHTML = names.map(name=>{
-    const list = roleMap[name];
-    const rows = list.map(item=>{
-      const {story, idx} = item;
-      return `
-      <div class="role-story-row" data-story-index="${idx}">
-        ${coverHtml(story.cover,'role-cover')}
-        <div class="role-story-info">
-          <div class="role-story-title">${esc(story.title||'未命名小故事')}</div>
-          <div class="hint">发布时间：${esc(story.createdAt||'未填写')}</div>
-        </div>
-      </div>`;
-    }).join('');
-    const isExp = currentExpandedRole === name;
-    return `
-    <div class="role-card ${isExp?'open':''}" data-role="${esc(name)}">
-      <div class="role-head">
-        <div class="role-title-wrap">
-          <div class="role-title"># ${esc(name)}</div>
-        </div>
-        <button class="role-count-btn" type="button">
-          ${list.length} 个故事
-        </button>
-      </div>
-      <div class="role-stories">${rows}</div>
-    </div>`;
-  }).join('');
-}
-function onRoleSearchInput(){
-  clearTimeout(searchDebounceTimer);
-  searchDebounceTimer = setTimeout(()=>{
-    renderRolePanel();
-  },150);
-}
-function toggleRoleCard(cardEl){
-  const rawName = cardEl.dataset.role;
-  if(currentExpandedRole === rawName){
-    currentExpandedRole = null;
-  }else{
-    currentExpandedRole = rawName;
-  }
-  renderRolePanel();
-}
-function openDetailByIndex(index) {
-  const story = getStories()[index];
-  if(!story) return;
-  const chips = getSortedRoles(story).map(r=>{
-    return `<span class="role-chip">${esc(r)}</span>`;
-  }).join(' ');
-  const biliUrl = story.bilibiliUrl ? esc(story.bilibiliUrl) : '';
-  const dyUrl = story.douyinUrl ? esc(story.douyinUrl) : '';
-  document.getElementById('detailContent').innerHTML =
-    coverHtml(story.cover,'detail-cover')
-    +`<div class="detail-title">${esc(story.title||'未命名小故事')}</div>`
-    +`<div class="detail-block"><div class="detail-label">简介</div><div class="detail-desc">${esc(story.desc||'暂无简介')}</div></div>`
-    +`<div class="detail-block"><div class="detail-label">登场角色</div><div class="role-row">${chips||'<span class="hint">暂无登场角色</span>'}</div></div>`
-    +`<div class="detail-block"><div class="detail-label">发布时间</div><div class="hint">${esc(story.createdAt||'未填写')}</div></div>`
-    +`<div class="detail-actions">
-        <button class="btn-bilibili ${biliUrl?'':'btn-disabled'}" ${biliUrl?`data-bilibili-url="${biliUrl}"`:'disabled'}>B站</button>
-        <button class="btn-douyin ${dyUrl?'':'btn-disabled'}" ${dyUrl?`data-douyin-url="${dyUrl}"`:'disabled'}>抖音</button>
-      </div>`;
-  document.getElementById('detailMask').classList.add('show');
-  document.body.style.overflow = 'hidden';
-}
-function closeDetail() {
-  document.getElementById('detailMask').classList.remove('show');
-  document.body.style.overflow = '';
-}
-function bindGlobalEvents(){
-  document.querySelectorAll('.tab').forEach(t=>{
-    t.addEventListener('click', ()=> switchTab(t.dataset.tab));
-  });
-  document.getElementById('sortBtn').addEventListener('click', toggleSortMode);
-  document.getElementById('roleSearchInput').addEventListener('input', onRoleSearchInput);
-  document.addEventListener('click', e=>{
-    const storyItem = e.target.closest('.story-item');
-    if(storyItem){
-      openDetailByIndex(Number(storyItem.dataset.storyIndex));
-      return;
-    }
-    const roleHeader = e.target.closest('.role-head');
-    if(roleHeader){
-      const card = roleHeader.closest('.role-card');
-      if(card) toggleRoleCard(card);
-      return;
-    }
-    const roleStoryRow = e.target.closest('.role-story-row');
-    if(roleStoryRow){
-      openDetailByIndex(Number(roleStoryRow.dataset.storyIndex));
-      return;
-    }
-    if(e.target.id === 'detailMask'){
-      closeDetail();
-      return;
-    }
-    const biliBtn = e.target.closest('[data-bilibili-url]');
-    if(biliBtn && !biliBtn.disabled){
-      const u = biliBtn.dataset.bilibiliUrl;
-      if(u) window.open(u,'_blank');
-      return;
-    }
-    const dyBtn = e.target.closest('[data-douyin-url]');
-    if(dyBtn && !dyBtn.disabled){
-      const u = dyBtn.dataset.douyinUrl;
-      if(u) window.open(u,'_blank');
-    }
-  });
-  document.addEventListener('keydown', e=>{
-    if(e.key === 'Escape' && document.getElementById('detailMask').classList.contains('show')){
-      closeDetail();
-    }
-  });
-}
-window.onload=function(){
-  renderStories();
-  renderRolePanel();
-  bindGlobalEvents();
-}
-</script>
+<script src="./data.js?v=6"></script>
 <style>
 * {
   box-sizing: border-box;
@@ -279,45 +13,50 @@ window.onload=function(){
   padding: 0;
   -webkit-tap-highlight-color: transparent;
 }
+html {
+  height: 100dvh;
+}
 body {
   font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
   background: #f5f5f7;
   color: #1d1d1f;
   font-size: 16px;
-  padding-bottom: 40px;
+  min-height: 100dvh;
+  padding-bottom: calc(40px + env(safe-area-inset-bottom, 0px));
 }
 .header {
   background: #fff;
   padding: 16px;
+  padding-top: calc(16px + env(safe-area-inset-top, 0px));
   position: sticky;
   top: 0;
   z-index: 10;
   border-bottom: 1px solid #e5e5ea;
-  display:flex;
-  align-items:center;
-  justify-content:space-between;
-  gap:12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
 }
 .header h1 {
   font-size: 22px;
-  white-space:nowrap;
+  white-space: nowrap;
 }
-.sort-btn{
-  display:flex;
-  align-items:center;
-  gap:4px;
-  border:none;
-  background:transparent;
-  color:#666666;
-  font-size:14px;
-  cursor:pointer;
-  padding:6px 8px;
-  border-radius:6px;
-  height:36px;
-  flex-shrink:0;
+.sort-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border: none;
+  background: transparent;
+  color: #666666;
+  font-size: 14px;
+  cursor: pointer;
+  padding: 6px 8px;
+  border-radius: 6px;
+  height: 36px;
+  flex-shrink: 0;
 }
 .sort-btn:active {
-  background:#eeeeee;
+  background: #eeeeee;
 }
 .tabs {
   display: flex;
@@ -367,6 +106,11 @@ input[type=text] {
   font-size: 16px;
   font-family: inherit;
 }
+input[type=text]:focus {
+  outline: 2px solid #007aff;
+  outline-offset: 1px;
+  border-color: transparent;
+}
 .hint {
   font-size: 13px;
   color: #8e8e93;
@@ -388,6 +132,10 @@ input[type=text] {
   transform: scale(0.97);
   opacity: .75;
   background: #ececf0;
+}
+.story-item:focus-visible {
+  outline: 2px solid #007aff;
+  outline-offset: 2px;
 }
 .cover-wrap {
   flex: 0 0 96px;
@@ -416,15 +164,15 @@ input[type=text] {
 .story-info {
   flex: 1;
   min-width: 0;
-  display:flex;
-  flex-direction:column;
-  gap:6px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 .story-title {
   font-size: 16px;
   font-weight: 700;
   word-break: break-all;
-  line-height:1.4;
+  line-height: 1.4;
 }
 .story-meta {
   font-size: 12px;
@@ -462,6 +210,11 @@ input[type=text] {
   gap: 10px;
   cursor: pointer;
   min-height: 40px;
+  border-radius: 8px;
+}
+.role-head:focus-visible {
+  outline: 2px solid #007aff;
+  outline-offset: 2px;
 }
 .role-title-wrap {
   flex: 1;
@@ -473,14 +226,12 @@ input[type=text] {
   word-break: break-all;
 }
 .role-count-btn {
-  border: none;
   background: #f2f2f7;
   color: #666;
   font-size: 13px;
   padding: 7px 12px;
   border-radius: 20px;
   white-space: nowrap;
-  cursor: pointer;
   flex-shrink: 0;
 }
 .role-stories {
@@ -499,6 +250,10 @@ input[type=text] {
   border-radius: 8px;
   cursor: pointer;
   user-select: none;
+}
+.role-story-row:focus-visible {
+  outline: 2px solid #007aff;
+  outline-offset: 2px;
 }
 .role-cover {
   flex: 0 0 96px;
@@ -536,6 +291,8 @@ input[type=text] {
   justify-content: center;
   align-items: center;
   padding: 16px;
+  padding-bottom: calc(16px + env(safe-area-inset-bottom,0px));
+  padding-top: calc(16px + env(safe-area-inset-top,0px));
 }
 .modal-mask.show {
   display: flex;
@@ -543,12 +300,28 @@ input[type=text] {
 .modal {
   width: 100%;
   max-width: 480px;
-  max-height: 90vh;
+  max-height: 85dvh;
   overflow-y: auto;
   background: #fff;
   border-radius: 18px;
   position: relative;
   padding: 16px;
+}
+.modal-close {
+  position: absolute;
+  top:12px;
+  right:12px;
+  z-index:2;
+  width:32px;
+  height:32px;
+  border-radius:50%;
+  border:none;
+  background:#eeeeee;
+  font-size:18px;
+  cursor:pointer;
+  display:flex;
+  align-items:center;
+  justify-content:center;
 }
 .detail-cover {
   width: 100%;
@@ -593,55 +366,497 @@ input[type=text] {
   gap: 10px;
   margin-top: 16px;
 }
-.detail-actions button {
+.detail-actions a {
   flex: 1;
   text-align: center;
   padding: 12px 0;
   border-radius: 10px;
   font-size: 15px;
-  border: none;
-  cursor: pointer;
+  text-decoration: none;
+  color:#fff;
 }
 .btn-bilibili {
   background-color: #fb7299;
-  color:#ffffff;
 }
 .btn-douyin {
   background-color: #000000;
-  color:#ffffff;
-}
-.btn-disabled {
-  background: #e2e2e7 !important;
-  color: #a0a0a5 !important;
-  cursor: not-allowed !important;
 }
 </style>
 </head>
 <body>
 <div class="header">
   <h1>小故事</h1>
-  <button id="sortBtn" class="sort-btn">
+  <button id="sortBtn" class="sort-btn" type="button">
     <span id="sortLabel">最新发布</span>
     <span id="sortArrow">▾</span>
   </button>
 </div>
-<div class="tabs">
-  <div class="tab active" data-tab="list">故事</div>
-  <div class="tab" data-tab="roles">角色</div>
+
+<div class="tabs" role="tablist">
+  <div class="tab active" data-tab="list" role="tab" tabindex="0" aria-selected="true">故事</div>
+  <div class="tab" data-tab="roles" role="tab" tabindex="0" aria-selected="false">角色</div>
 </div>
+
 <div class="page active" id="page-list">
+  <div class="card">
+    <input type="text" id="storySearchInput" placeholder="搜索故事标题 / 角色 / 简介" aria-label="搜索故事">
+  </div>
   <div id="storyList"></div>
 </div>
+
 <div class="page" id="page-roles">
   <div class="card">
-    <input type="text" id="roleSearchInput" placeholder="搜索登场角色">
+    <input type="text" id="roleSearchInput" placeholder="搜索登场角色" aria-label="搜索登场角色">
   </div>
   <div id="rolePanel"></div>
 </div>
-<div class="modal-mask" id="detailMask">
-  <div class="modal">
+
+<div class="modal-mask" id="detailMask" role="dialog" aria-modal="true" aria-label="故事详情">
+  <div class="modal" tabindex="-1">
+    <button class="modal-close" type="button" aria-label="关闭详情">✕</button>
     <div id="detailContent"></div>
   </div>
 </div>
+
+<script>
+(function () {
+  'use strict';
+
+  var sortOrder = 'desc';
+  var currentExpandedRole = null;
+  var searchDebounceTimer = null;
+  var storySearchTimer = null;
+  var lastFocusedElement = null;
+  var _storiesCache = null;
+
+  // ---------- 数据访问 ----------
+  function getRawStories() {
+    if (typeof STORY_DATA !== 'undefined' && STORY_DATA && Array.isArray(STORY_DATA.stories)) {
+      return STORY_DATA.stories;
+    }
+    if (window.STORY_DATA && Array.isArray(window.STORY_DATA.stories)) {
+      return window.STORY_DATA.stories;
+    }
+    return [];
+  }
+
+  // 缺失id自动兜底
+  function getStories() {
+    if (_storiesCache) return _storiesCache;
+    var arr = getRawStories();
+    for (var i = 0; i < arr.length; i++) {
+      if (!arr[i].id) arr[i].id = 's_' + i;
+    }
+    _storiesCache = arr;
+    return arr;
+  }
+
+  function getStoryById(id) {
+    if (!id) return null;
+    var arr = getStories();
+    for (var i = 0; i < arr.length; i++) {
+      if (arr[i].id === id) return arr[i];
+    }
+    return null;
+  }
+
+  function getPriorityRoles() {
+    if (typeof STORY_DATA !== 'undefined' && STORY_DATA && Array.isArray(STORY_DATA.priorityRoles)) {
+      return STORY_DATA.priorityRoles.slice();
+    }
+    if (window.STORY_DATA && Array.isArray(window.STORY_DATA.priorityRoles)) {
+      return window.STORY_DATA.priorityRoles.slice();
+    }
+    return [];
+  }
+
+  function getRolePriority(name) {
+    var idx = getPriorityRoles().indexOf(name);
+    return idx === -1 ? 9999 : idx;
+  }
+
+  // ---------- 工具 ----------
+  function parseLocalDate(timeStr) {
+    if (!timeStr) return 0;
+    var m = String(timeStr).match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+    if (!m) return new Date(timeStr).getTime() || 0;
+    return new Date(parseInt(m[1], 10), parseInt(m[2], 10) - 1, parseInt(m[3], 10)).getTime();
+  }
+
+  function esc(str) {
+    if (str == null) return '';
+    return String(str).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  function isSafeHttpUrl(u) {
+    if (!u) return false;
+    try {
+      var url = new URL(u, location.href);
+      return url.protocol === 'http:' || url.protocol === 'https:';
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function getSortedStories() {
+    return getStories().slice().sort(function (a, b) {
+      var tA = parseLocalDate(a.createdAt);
+      var tB = parseLocalDate(b.createdAt);
+      return sortOrder === 'desc' ? tB - tA : tA - tB;
+    });
+  }
+
+  function getSortedRoles(story) {
+    var roles = (story.roles || []).slice();
+    var priorities = getPriorityRoles();
+    var priority = roles.filter(function (r) { return priorities.indexOf(r) !== -1; })
+      .sort(function (a, b) { return getRolePriority(a) - getRolePriority(b); });
+    var others = roles
+      .filter(function (r) { return priorities.indexOf(r) === -1; })
+      .sort(function (a, b) { return a.localeCompare(b, 'zh-CN'); });
+    return priority.concat(others);
+  }
+
+  // eager：详情大图立即加载，列表懒加载
+  function coverHtml(url, cls, eager) {
+    if (url) {
+      var safe = esc(url);
+      var loading = eager ? '' : ' loading="lazy"';
+      return '<div class="' + cls + '"><img data-cover-img="1"' + loading +
+        ' src="' + safe + '" alt="封面"></div>';
+    }
+    return '<div class="' + cls + '"><div class="cover-placeholder">无封面</div></div>';
+  }
+
+  // ---------- Tab 切换 ----------
+  function switchTab(targetTab) {
+    var tabs = document.querySelectorAll('.tab');
+    for (var i = 0; i < tabs.length; i++) {
+      var t = tabs[i];
+      var on = t.dataset.tab === targetTab;
+      t.classList.toggle('active', on);
+      t.setAttribute('aria-selected', on ? 'true' : 'false');
+    }
+    document.getElementById('page-list').classList.toggle('active', targetTab === 'list');
+    document.getElementById('page-roles').classList.toggle('active', targetTab === 'roles');
+
+    var sortBtn = document.getElementById('sortBtn');
+    if (sortBtn) {
+      sortBtn.style.visibility = targetTab === 'list' ? 'visible' : 'hidden';
+      sortBtn.style.pointerEvents = targetTab === 'list' ? 'auto' : 'none';
+    }
+
+    if (targetTab === 'list') renderStories();
+    if (targetTab === 'roles') renderRolePanel();
+  }
+
+  function toggleSortMode() {
+    sortOrder = sortOrder === 'desc' ? 'asc' : 'desc';
+    document.getElementById('sortLabel').textContent = sortOrder === 'desc' ? '最新发布' : '最早发布';
+    document.getElementById('sortArrow').textContent = sortOrder === 'desc' ? '▾' : '▴';
+    renderStories();
+  }
+
+  // ---------- 渲染：故事列表 ----------
+  function renderStories() {
+    var list = getSortedStories();
+    var box = document.getElementById('storyList');
+    var input = document.getElementById('storySearchInput');
+    var kw = input ? input.value.trim().toLowerCase() : '';
+
+    var filtered = !kw ? list : list.filter(function (st) {
+      if ((st.title || '').toLowerCase().indexOf(kw) !== -1) return true;
+      if ((st.desc || '').toLowerCase().indexOf(kw) !== -1) return true;
+      if (Array.isArray(st.roles)) {
+        for (var i = 0; i < st.roles.length; i++) {
+          if (String(st.roles[i]).toLowerCase().indexOf(kw) !== -1) return true;
+        }
+      }
+      return false;
+    });
+
+    if (!filtered.length) {
+      if (!list.length) {
+        box.innerHTML = '<div class="empty">暂无小故事。<br>请在 data.js 中添加故事数据。</div>';
+      } else {
+        box.innerHTML = '<div class="empty">没有找到匹配的故事。</div>';
+      }
+      return;
+    }
+
+    var html = '';
+    for (var i = 0; i < filtered.length; i++) {
+      var st = filtered[i];
+      var storyTitle = st.title || '未命名小故事';
+      var chips = getSortedRoles(st).map(function (r) {
+        return '<span class="role-chip">' + esc(r) + '</span>';
+      }).join('');
+
+      html += '<div class="card">' +
+        '<div class="story-item" data-story-id="' + esc(st.id) + '" tabindex="0" role="button" ' +
+          'aria-label="查看故事：' + esc(storyTitle) + '">' +
+          coverHtml(st.cover, 'cover-wrap', false) +
+          '<div class="story-info">' +
+            '<div class="story-title">' + esc(storyTitle) + '</div>' +
+            '<div class="role-row">' + (chips || '<span class="hint">暂无登场角色</span>') + '</div>' +
+            '<div class="story-meta">发布时间：' + esc(st.createdAt || '未填写') + '</div>' +
+          '</div>' +
+        '</div>' +
+      '</div>';
+    }
+    box.innerHTML = html;
+  }
+
+  // ---------- 渲染：角色面板 ----------
+  function getRoleMap() {
+    var map = {};
+    var list = getStories();
+    for (var i = 0; i < list.length; i++) {
+      var story = list[i];
+      var roles = story.roles || [];
+      for (var j = 0; j < roles.length; j++) {
+        var role = roles[j];
+        if (!map[role]) map[role] = [];
+        map[role].push(story);
+      }
+    }
+    return map;
+  }
+
+  function renderRolePanel() {
+    var input = document.getElementById('roleSearchInput');
+    var kw = input ? input.value.trim().toLowerCase() : '';
+    var box = document.getElementById('rolePanel');
+    var map = getRoleMap();
+
+    var names = Object.keys(map).filter(function (name) {
+      return !kw || name.toLowerCase().indexOf(kw) !== -1;
+    }).sort(function (a, b) {
+      var p = getRolePriority(a) - getRolePriority(b);
+      if (p !== 0) return p;
+      return a.localeCompare(b, 'zh-CN');
+    });
+
+    if (currentExpandedRole && names.indexOf(currentExpandedRole) === -1) {
+      currentExpandedRole = null;
+    }
+
+    if (!names.length) {
+      if (!getStories().length) {
+        box.innerHTML = '<div class="empty">暂无角色。<br>请先在 data.js 添加故事，并填写 roles 角色字段。</div>';
+      } else {
+        box.innerHTML = '<div class="empty">' + (kw ? '没有找到相关角色。' : '故事里还没有填写任何登场角色。') + '</div>';
+      }
+      return;
+    }
+
+    var html = '';
+    for (var i = 0; i < names.length; i++) {
+      var name = names[i];
+      var storyList = map[name];
+      var rows = '';
+
+      for (var j = 0; j < storyList.length; j++) {
+        var s = storyList[j];
+        var sTitle = s.title || '未命名小故事';
+        rows += '<div class="role-story-row" data-story-id="' + esc(s.id) + '" tabindex="0" role="button" ' +
+          'aria-label="查看故事：' + esc(sTitle) + '">' +
+          coverHtml(s.cover, 'role-cover', false) +
+          '<div class="role-story-info">' +
+            '<div class="role-story-title">' + esc(sTitle) + '</div>' +
+            '<div class="hint">发布时间：' + esc(s.createdAt || '未填写') + '</div>' +
+          '</div>' +
+        '</div>';
+      }
+
+      var openCls = currentExpandedRole === name ? ' open' : '';
+      var expandLabel = currentExpandedRole === name ? '收起角色' : '展开角色';
+      html += '<div class="role-card' + openCls + '" data-role="' + esc(name) + '">' +
+        '<div class="role-head" tabindex="0" role="button" ' +
+          'aria-label="' + expandLabel + '：' + esc(name) + '" aria-expanded="' +
+          (currentExpandedRole === name ? 'true' : 'false') + '">' +
+          '<div class="role-title-wrap"><div class="role-title"># ' + esc(name) + '</div></div>' +
+          '<span class="role-count-btn" aria-hidden="true">' + storyList.length + ' 个故事</span>' +
+        '</div>' +
+        '<div class="role-stories">' + rows + '</div>' +
+      '</div>';
+    }
+    box.innerHTML = html;
+  }
+
+  function toggleRoleCard(card) {
+    if (!card) return;
+    var name = card.getAttribute('data-role');
+    currentExpandedRole = currentExpandedRole === name ? null : name;
+    renderRolePanel();
+  }
+
+  // ---------- 弹窗 ----------
+  var modalFocusables = [];
+
+  function openDetail(storyId) {
+    var story = getStoryById(storyId);
+    if (!story) return;
+
+    lastFocusedElement = document.activeElement;
+    var chips = getSortedRoles(story).map(function (r) {
+      return '<span class="role-chip">' + esc(r) + '</span>';
+    }).join(' ');
+
+    var bili = isSafeHttpUrl(story.bilibiliUrl) ? esc(story.bilibiliUrl) : '';
+    var douyin = isSafeHttpUrl(story.douyinUrl) ? esc(story.douyinUrl) : '';
+
+    var actions = '';
+    if (bili || douyin) {
+      actions = '<div class="detail-actions">';
+      if (bili) actions += '<a class="btn-bilibili" href="' + bili + '" target="_blank" rel="noopener noreferrer">B站</a>';
+      if (douyin) actions += '<a class="btn-douyin" href="' + douyin + '" target="_blank" rel="noopener noreferrer">抖音</a>';
+      actions += '</div>';
+    }
+
+    var html =
+      coverHtml(story.cover, 'detail-cover', true) +
+      '<div class="detail-title">' + esc(story.title || '未命名小故事') + '</div>' +
+      '<div class="detail-block"><div class="detail-label">简介</div>' +
+        '<div class="detail-desc">' + esc(story.desc || '暂无简介') + '</div></div>' +
+      '<div class="detail-block"><div class="detail-label">登场角色</div>' +
+        '<div class="role-row">' + (chips || '<span class="hint">暂无登场角色</span>') + '</div></div>' +
+      '<div class="detail-block"><div class="detail-label">发布时间</div>' +
+        '<div class="hint">' + esc(story.createdAt || '未填写') + '</div></div>' +
+      actions;
+
+    document.getElementById('detailContent').innerHTML = html;
+    var mask = document.getElementById('detailMask');
+    mask.classList.add('show');
+    document.body.style.overflow = 'hidden';
+
+    var modal = mask.querySelector('.modal');
+    modalFocusables = Array.prototype.slice.call(
+      modal.querySelectorAll('button, a[href], input, [tabindex]:not([tabindex="-1"])')
+    );
+    if (modalFocusables.length) modalFocusables[0].focus();
+  }
+
+  function closeDetail() {
+    var mask = document.getElementById('detailMask');
+    mask.classList.remove('show');
+    document.body.style.overflow = '';
+    if (lastFocusedElement && typeof lastFocusedElement.focus === 'function') {
+      lastFocusedElement.focus();
+    }
+    lastFocusedElement = null;
+  }
+
+  function trapFocus(e) {
+    var mask = document.getElementById('detailMask');
+    if (!mask.classList.contains('show')) return;
+    if (!modalFocusables.length) return;
+
+    var first = modalFocusables[0];
+    var last = modalFocusables[modalFocusables.length - 1];
+
+    if (e.key === 'Tab') {
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    } else if (e.key === 'Escape') {
+      closeDetail();
+    }
+  }
+
+  // ---------- 图片加载失败兜底 ----------
+  function handleImageError(e) {
+    var img = e.target;
+    if (img && img.getAttribute('data-cover-img') === '1') {
+      var parent = img.parentNode;
+      if (parent) parent.innerHTML = '<div class="cover-placeholder">无封面</div>';
+    }
+  }
+
+  // ---------- 事件绑定 ----------
+  function bindEvents() {
+    document.addEventListener('error', handleImageError, true);
+
+    var tabs = document.querySelectorAll('.tab');
+    for (var i = 0; i < tabs.length; i++) {
+      (function (tab) {
+        tab.addEventListener('click', function () {
+          switchTab(tab.getAttribute('data-tab'));
+        });
+        tab.addEventListener('keydown', function (e) {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            switchTab(tab.getAttribute('data-tab'));
+          }
+        });
+      })(tabs[i]);
+    }
+
+    document.getElementById('sortBtn').addEventListener('click', toggleSortMode);
+    document.getElementById('storySearchInput').addEventListener('input', function () {
+      clearTimeout(storySearchTimer);
+      storySearchTimer = setTimeout(renderStories, 150);
+    });
+    document.getElementById('roleSearchInput').addEventListener('input', function () {
+      clearTimeout(searchDebounceTimer);
+      searchDebounceTimer = setTimeout(renderRolePanel, 150);
+    });
+
+    document.addEventListener('click', function (e) {
+      var storyItem = e.target.closest ? e.target.closest('.story-item') : null;
+      if (storyItem) {
+        openDetail(storyItem.getAttribute('data-story-id'));
+        return;
+      }
+
+      var roleRow = e.target.closest ? e.target.closest('.role-story-row') : null;
+      if (roleRow) {
+        openDetail(roleRow.getAttribute('data-story-id'));
+        return;
+      }
+
+      var roleHead = e.target.closest ? e.target.closest('.role-head') : null;
+      if (roleHead) {
+        // ✅ 修复：使用closest语义查找.role-card，不再依赖parentNode
+        toggleRoleCard(roleHead.closest('.role-card'));
+        return;
+      }
+
+      if (e.target.id === 'detailMask') {
+        closeDetail();
+        return;
+      }
+      if (e.target.classList && e.target.classList.contains('modal-close')) {
+        closeDetail();
+      }
+    });
+
+    document.addEventListener('keydown', function (e) {
+      var t = e.target;
+      if ((e.key === 'Enter' || e.key === ' ') && t.classList) {
+        if (t.classList.contains('story-item') ||
+            t.classList.contains('role-head') ||
+            t.classList.contains('role-story-row')) {
+          e.preventDefault();
+          t.click();
+        }
+      }
+      trapFocus(e);
+    });
+  }
+
+  document.addEventListener('DOMContentLoaded', function () {
+    renderStories();
+    renderRolePanel();
+    bindEvents();
+  });
+})();
+</script>
 </body>
 </html>
