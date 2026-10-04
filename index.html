@@ -4,18 +4,16 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="referrer" content="no-referrer">
-<title>小故事库</title>
+<title>小故事</title>
 <!-- 必须和 index.html 放在同一文件夹 -->
 <script src="./data.js?v=3"></script>
 <script>
-// 全局状态
+  
 var sortOrder = 'desc';
 var currentExpandedRole = null;
 var searchDebounceTimer = null;
 
-// 容错：data.js 没加载/格式错误时，给空数据，防止页面崩溃
-// 注意：data.js 用 const 声明 STORY_DATA，那是全局词法绑定，不会挂到 window 上，
-// 所以这里不能覆盖它，也不能用 var 重新声明（会 SyntaxError）。
+  
 if (typeof STORY_DATA === 'undefined' || !STORY_DATA || !Array.isArray(STORY_DATA.stories)) {
   window.STORY_DATA = { stories: [] };
 }
@@ -27,8 +25,7 @@ function parseLocalDate(timeStr) {
   return new Date(parseInt(m[1]), parseInt(m[2]) - 1, parseInt(m[3])).getTime();
 }
 
-// 关键：优先读 data.js 的 const 词法绑定，读不到再读 window 兜底。
-// 直接写 window.STORY_DATA 是错的 —— const 不会挂到 window 上。
+
 function getStories() {
   if (typeof STORY_DATA !== 'undefined' && STORY_DATA && Array.isArray(STORY_DATA.stories)) {
     return STORY_DATA.stories;
@@ -60,7 +57,7 @@ function switchTab(targetTab) {
     sortBtn.style.visibility = targetTab === "list" ? "visible" : "hidden";
     sortBtn.style.pointerEvents = targetTab === "list" ? "auto" : "none";
   }
-  // 切换时强制重新渲染，解决空白点不动
+
   if(targetTab === 'list') renderStories();
   if(targetTab === 'roles') renderRolePanel();
 }
@@ -622,7 +619,7 @@ input[type=text] {
 </head>
 <body>
 <div class="header">
-  <h1>小故事库</h1>
+  <h1>小故事</h1>
   <button id="sortBtn" class="sort-btn">
     <span id="sortLabel">最新发布</span>
     <span id="sortArrow">▾</span>
